@@ -1,0 +1,15 @@
+﻿#include "Utility.hlsl"
+#include "Cholesky.hlsl"
+
+#pragma kernel DecomposeCovariance
+#define GROUP_SIZE 16
+
+StructuredBuffer<float3> _Covariances;
+RWStructuredBuffer<float3x3> _Cholesky;
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void DecomposeCovariance(uint3 id : SV_DispatchThreadID)
+{
+    float3x3 covariance = ReadMatrixSymmetric3x3(_Covariances, id.x);
+    _Cholesky[id.x] = CholeskyCreate(covariance);
+}
