@@ -16,7 +16,7 @@ namespace GaussianMixtureModel
             public int UpdateIndirectArgs;
             public int ResetCovariancesAndFracs;
         }
-        
+
         class ConvergeKernelIds
         {
             public int PrepareCholeskysAndLnDets;
@@ -51,7 +51,7 @@ namespace GaussianMixtureModel
         int m_NumClusters;
 
         // Exposed as it is useful for visualization.
-        public Action<int> NumColorBinsEvaluated = delegate { };
+        public Action<int> NumColorBinsEvaluated = delegate {};
         public ComputeBuffer MeansBuffer => m_CentroidBuffer.In;
         public ComputeBuffer CovariancesBuffer => m_CovarianceBuffer.In;
         public ComputeBuffer SelectedColorBinsBuffer => m_SelectedColorBinBuffer;
@@ -70,7 +70,7 @@ namespace GaussianMixtureModel
         {
             m_InitShader = initShader;
             m_ConvergeShader = convergeShader;
-            
+
             Utilities.LoadKernelIndices(m_InitShader, m_InitKernelIds);
             Utilities.LoadKernelIndices(m_ConvergeShader, m_ConvergeKernelIds);
             Utilities.AllocateNativeArrayIfNeeded(ref m_NumSelectedColorBins, 1);
@@ -79,11 +79,11 @@ namespace GaussianMixtureModel
         public void Dispose()
         {
             Utilities.DeallocateNativeArrayIfNeeded(ref m_NumSelectedColorBins);
-            
+
             m_WeightsBuffer.Dispose();
             m_CentroidBuffer.Dispose();
             m_CovarianceBuffer.Dispose();
-            
+
             Utilities.DeallocateIfNeeded(ref m_FracsBuffer);
             Utilities.DeallocateIfNeeded(ref m_CholeskysBuffer);
             Utilities.DeallocateIfNeeded(ref m_LnDetsBuffer);

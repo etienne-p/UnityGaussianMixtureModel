@@ -1,4 +1,4 @@
-﻿using Unity.Mathematics;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -44,7 +44,7 @@ namespace GaussianMixtureModel
         {
             Utilities.AllocateBufferIfNeeded<float>(ref m_RespsBuffer, numWeights);
             m_WeightsBuffer.AllocateIfNeeded(numWeights);
-            
+
             var shader = m_ConvergeShader;
             var kernel = m_ConvergeKernelIds.UpdateRespsAndMeans;
 
@@ -61,7 +61,7 @@ namespace GaussianMixtureModel
 
             cmd.DispatchCompute(shader, kernel, m_IndirectArgsBuffer, 0);
         }
-        
+
         void ReduceWeightsAndMeans(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;
@@ -104,7 +104,7 @@ namespace GaussianMixtureModel
             var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
             cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
         }
-        
+
         void UpdateCovariances(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;
@@ -146,7 +146,7 @@ namespace GaussianMixtureModel
 
             m_CovarianceBuffer.Swap();
         }
-        
+
         void NormalizeCovariances(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;

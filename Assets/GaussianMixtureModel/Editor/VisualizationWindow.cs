@@ -1,4 +1,4 @@
-﻿using UnityEditor;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
@@ -99,7 +99,7 @@ namespace GaussianMixtureModel.Editor
             GetWindow<VisualizationWindow>().Show();
         }
 
-        [SerializeField] 
+        [SerializeField]
         OrbitTransform m_OrbitTransform;
 
         VisualElement m_HelpBox;
@@ -172,7 +172,7 @@ namespace GaussianMixtureModel.Editor
             var aspect = m_Target.width / (float)m_Target.height;
 
             if (renderHashcode != m_RenderHashcode && m_GaussianMixture.TryRenderVisualization(
-                    m_CommandBuffer, m_Target, m_OrbitTransform.GetViewProjection(aspect)))
+                m_CommandBuffer, m_Target, m_OrbitTransform.GetViewProjection(aspect)))
             {
                 Graphics.ExecuteCommandBuffer(m_CommandBuffer);
                 m_CommandBuffer.Clear();
@@ -188,11 +188,11 @@ namespace GaussianMixtureModel.Editor
             {
                 return;
             }
-            
+
             m_HelpBox.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
             m_Container.style.display = value ? DisplayStyle.None : DisplayStyle.Flex;
         }
-        
+
         void TryStartExecution()
         {
             if (m_GaussianMixture != null)

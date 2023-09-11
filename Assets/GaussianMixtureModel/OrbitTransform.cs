@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -31,7 +31,7 @@ namespace GaussianMixtureModel
         }
 
         public float4x4 GetViewProjection(float aspect) => GetViewProjection(this, aspect);
-        
+
         static float4x4 GetViewProjection(OrbitTransform cameraTransform, float aspect)
         {
             var model = float4x4.Translate(Vector3.one * -.5f);

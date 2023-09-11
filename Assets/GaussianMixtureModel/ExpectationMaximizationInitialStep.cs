@@ -1,4 +1,4 @@
-﻿using Unity.Collections;
+using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Assertions;
@@ -82,10 +82,10 @@ namespace GaussianMixtureModel
             // Copy the count of populated color bins to indirect arguments buffer.
             // We will then infer arguments for subsequent reductions.
             cmd.CopyCounterValue(m_SelectedColorBinBuffer, m_IndirectArgsBuffer, 0);
-            
+
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBufferOut, m_IndirectArgsBuffer);
             cmd.DispatchCompute(shader, kernel, 1, 1, 1);
-            
+
             // We readback the number of selected color bins, to be used for visualization.
             cmd.RequestAsyncReadbackIntoNativeArray(ref m_NumSelectedColorBins, m_IndirectArgsBuffer, 4, 12,
                 OnNumColorBinsReadback);

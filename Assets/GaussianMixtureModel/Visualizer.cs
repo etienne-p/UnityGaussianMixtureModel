@@ -1,4 +1,4 @@
-﻿using Unity.Mathematics;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -7,7 +7,7 @@ namespace GaussianMixtureModel
     class Visualizer
     {
         const int k_GroupSize = 16;
-        
+
         ComputeBuffer m_CholeskyBuffer;
         Material m_EllipsoidsMaterial;
         Material m_VoxelsMaterial;

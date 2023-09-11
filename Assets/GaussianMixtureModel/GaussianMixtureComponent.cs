@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
@@ -21,24 +21,24 @@ namespace GaussianMixtureModel
         const int k_MinClusters = 2;
         const int k_MaxClusters = 32;
 
-        [Tooltip("Assign \"Initialization.compute\".")] 
+        [Tooltip("Assign \"Initialization.compute\".")]
         [SerializeField]
         ComputeShader m_InitShader;
 
-        [Tooltip("Assign \"Converge.compute\".")] 
+        [Tooltip("Assign \"Converge.compute\".")]
         [SerializeField]
         ComputeShader m_ConvergeShader;
 
-        [Tooltip("Assign \"Cholesky.compute\".")] 
+        [Tooltip("Assign \"Cholesky.compute\".")]
         [SerializeField]
         ComputeShader m_CholeskyShader;
 
-        [Tooltip("The image to be analyzed.")] 
+        [Tooltip("The image to be analyzed.")]
         [SerializeField]
         Texture m_Source;
 
-        [Tooltip("The number of clusters.")] 
-        [SerializeField] 
+        [Tooltip("The number of clusters.")]
+        [SerializeField]
         [Range(k_MinClusters, k_MaxClusters)]
         int m_NumClusters;
 
@@ -48,8 +48,8 @@ namespace GaussianMixtureModel
         int m_Iterations;
 
         [Tooltip("The delay elapsed between each convergence step.")]
-        [SerializeField] 
-        [Range(.01f, .5f)] 
+        [SerializeField]
+        [Range(.01f, .5f)]
         float m_Delay;
 
         readonly Visualizer m_Visualizer = new();
@@ -217,7 +217,7 @@ namespace GaussianMixtureModel
 
             cmd.Clear();
         }
-        
+
         static bool s_ContinuousEditorUpdate;
 
         static void SetContinuousEditorUpdate(bool value)
@@ -240,7 +240,7 @@ namespace GaussianMixtureModel
             }
 #endif
         }
-        
+
         static void QueueUpdate()
         {
 #if UNITY_EDITOR

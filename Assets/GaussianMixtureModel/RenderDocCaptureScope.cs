@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditorInternal;
@@ -40,7 +40,7 @@ namespace GaussianMixtureModel
 #else
         class NullScope : IDisposable
         {
-            public void Dispose(){}
+            public void Dispose() {}
         }
         public static IDisposable Create() => new NullScope();
 #endif
