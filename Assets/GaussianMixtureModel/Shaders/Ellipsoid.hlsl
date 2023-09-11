@@ -1,4 +1,6 @@
-﻿StructuredBuffer<float3> _Centroids;
+﻿#pragma enable_d3d11_debug_symbols
+
+StructuredBuffer<float3> _Means;
 StructuredBuffer<float3x3> _Cholesky;
 
 float4x4 _ViewProjection;
@@ -18,7 +20,7 @@ struct Varyings
 
 Varyings Vertex(Attributes input)
 {
-    float3 center = _Centroids[input.instanceID];
+    float3 center = _Means[input.instanceID];
     float3x3 cholesky = _Cholesky[input.instanceID];
 
     // The built-in sphere mesh we use is sphere centered at zero with radius = 0.5

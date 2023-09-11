@@ -10,26 +10,32 @@ namespace GaussianMixtureModel
         public static readonly int _SourceSize = Shader.PropertyToID("_SourceSize");
         public static readonly int _SourceTexture = Shader.PropertyToID("_SourceTexture");
         public static readonly int _AppendSelectedColorBins = Shader.PropertyToID("_AppendSelectedColorBins");
-        public static readonly int _IndirectArgsBuffer = Shader.PropertyToID("_IndirectArgsBuffer");
-        public static readonly int _CovariancesIn = Shader.PropertyToID("_CovariancesIn");
-        public static readonly int _CovariancesOut = Shader.PropertyToID("_CovariancesOut");
-        public static readonly int _Weights = Shader.PropertyToID("_Weights");
-        public static readonly int _CentroidsIn = Shader.PropertyToID("_CentroidsIn");
-        public static readonly int _CentroidsOut = Shader.PropertyToID("_CentroidsOut");
-        public static readonly int _SqrtDetReciprocals = Shader.PropertyToID("_SqrtDetReciprocals");
-        public static readonly int _Precisions = Shader.PropertyToID("_Precisions");
+        public static readonly int _IndirectArgsBufferIn = Shader.PropertyToID("_IndirectArgsBufferIn");
+        public static readonly int _IndirectArgsBufferOut = Shader.PropertyToID("_IndirectArgsBufferOut");
         public static readonly int _SelectedColorBins = Shader.PropertyToID("_SelectedColorBins");
-        public static readonly int _SumsIn = Shader.PropertyToID("_SumsIn");
-        public static readonly int _SumsOut = Shader.PropertyToID("_SumsOut");
         public static readonly int _IndirectArgsOffset = Shader.PropertyToID("_IndirectArgsOffset");
         public static readonly int _ClusterIndex = Shader.PropertyToID("_ClusterIndex");
-        public static readonly int _Centroids = Shader.PropertyToID("_Centroids");
+        public static readonly int _Means = Shader.PropertyToID("_Means");
         public static readonly int _Covariances = Shader.PropertyToID("_Covariances");
-        public static readonly int _PrecisionsRW = Shader.PropertyToID("_PrecisionsRW");
-        public static readonly int _SqrtDetReciprocalsRW = Shader.PropertyToID("_SqrtDetReciprocalsRW");
         public static readonly int _Cholesky = Shader.PropertyToID("_Cholesky");
         public static readonly int _ViewProjection = Shader.PropertyToID("_ViewProjection");
         public static readonly int _Opacity = Shader.PropertyToID("_Opacity");
         public static readonly int _MaxBinSize = Shader.PropertyToID("_MaxBinSize");
+        public static readonly int _TotalSamples = Shader.PropertyToID("_TotalSamples");
+
+        public static readonly int _WeightsIn = Shader.PropertyToID("_WeightsIn");
+        public static readonly int _WeightsOut = Shader.PropertyToID("_WeightsOut");
+        public static readonly int _RespsIn = Shader.PropertyToID("_RespsIn");
+        public static readonly int _RespsOut = Shader.PropertyToID("_RespsOut");
+        public static readonly int _FracsIn = Shader.PropertyToID("_FracsIn");
+        public static readonly int _FracsOut = Shader.PropertyToID("_FracsOut");
+        public static readonly int _MeansIn = Shader.PropertyToID("_MeansIn");
+        public static readonly int _MeansOut = Shader.PropertyToID("_MeansOut");
+        public static readonly int _CovariancesIn = Shader.PropertyToID("_CovariancesIn");
+        public static readonly int _CovariancesOut = Shader.PropertyToID("_CovariancesOut");
+        public static readonly int _LnDetsIn = Shader.PropertyToID("_LnDetsIn");
+        public static readonly int _LnDetsOut = Shader.PropertyToID("_LnDetsOut");
+        public static readonly int _CholeskysIn = Shader.PropertyToID("_CholeskysIn");
+        public static readonly int _CholeskysOut = Shader.PropertyToID("_CholeskysOut");
     }
 }

@@ -1,44 +1,55 @@
 ﻿// Evaluate the Cholesky decomposition of a symmetric and positive-definite matrix.
 float3x3 CholeskyCreate(in float3x3 A)
 {
-    float3x3 result = 0;
+    uint i;
+    float3x3 L = A;
     [unroll(3)]
-    for (uint i = 0; i < 3; i++)
+    for(i = 0; i != 3; ++i)
     {
         [unroll(3)]
-        for (uint j = 0; j <= i; j++)
+        for (uint j = i; j != 3; ++j)
         {
-            float sum = 0.0;
+            float sum = L[i][j];
 
-            // 2 since k < j.
-            [unroll(2)]
-            for (uint k = 0; k < j; k++)
+            [unroll(3)]
+            for(int k = i - 1; k >= 0; --k)
             {
-                sum += result[i][k] * result[j][k];
+                sum -= L[i][k] * L[j][k];
             }
-
-            if (j == i)
+            
+            if (i == j)
             {
-                result[i][j] = sqrt(A[i][i] - sum);
+                // sum should be positive.
+                L[i][i] = sqrt(sum);
             }
             else
             {
-                result[i][j] = 1.0 / result[j][j] * (A[i][j] - sum);
+                L[j][i] = sum / L[i][i];
             }
         }
     }
 
-    return result;
+    [unroll(3)]
+    for(i = 0; i != 3; ++i)
+    {
+        [unroll(2)]
+        for (uint j = 0; j < i; ++j)
+        {
+            L[j][i] = 0;
+        }
+    }
+
+    return L;
 }
 
-// Solve L.y = b
-float3 CholeskySolve(in float3x3 L, in float3 b, out float3 y)
+// Solve L.y = b.
+void CholeskySolve(in float3x3 L, in float3 b, inout float3 y)
 {
     [unroll(3)]
     for(uint i = 0; i != 3; ++i)
     {
         float sum = b[i];
-        [unroll(3)]
+        [unroll(2)]
         for(uint j = 0; j < i; ++j)
         {
             sum -= L[i][j] * y[j];
@@ -47,15 +58,10 @@ float3 CholeskySolve(in float3x3 L, in float3 b, out float3 y)
     }
 }
 
-// Returns the logarithm of the determinant of the matrix whose cholseky decomposition we pass.
+// Returns the logarithm of the determinant of the matrix whose Cholseky decomposition we pass.
 float CholeskyLogDet(in float3x3 L)
 {
-    float sum = 0;
-    [unroll(3)]
-    for(uint i = 0; i != 3; ++i)
-    {
-        sum += log(L[i][i]);
-    }
-    return 2 * sum;
+    float3 trace = float3(L[0][0], L[1][1], L[2][2]);
+    return 2 * dot((1).xxx, log(trace));
 }
 

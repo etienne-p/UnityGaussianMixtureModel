@@ -1,45 +1,48 @@
 ﻿#include "Utility.hlsl"
+#include "Cholesky.hlsl"
 
 #define GRID_SIZE 32
 #define GROUP_SIZE 32
-#define EPSILON 1e-4
 
-//#pragma enable_d3d11_debug_symbols
+#pragma enable_d3d11_debug_symbols
 
-#pragma kernel PreparePrecisionsAndDeterminants
-#pragma kernel UpdateWeightsAndCentroids
-#pragma kernel ReduceSumsAndCentroids
+#pragma kernel PrepareCholeskysAndLnDets
+#pragma kernel UpdateRespsAndMeans
+#pragma kernel ReduceWeightsAndMeans
+#pragma kernel NormalizeMeansAndFracs
 #pragma kernel UpdateCovariances
 #pragma kernel ReduceCovariances
-#pragma kernel NormalizeCentroidsAndCovariances
+#pragma kernel NormalizeCovariances
 
 RWStructuredBuffer<uint2> _SelectedColorBins;
 
-RWBuffer<uint> _IndirectArgsBuffer;
+Buffer<uint> _IndirectArgsBufferIn;
 uint _IndirectArgsOffset;
 
-RWStructuredBuffer<float> _Weights;
+StructuredBuffer<float> _WeightsIn;
+RWStructuredBuffer<float> _WeightsOut;
 
-RWStructuredBuffer<float3> _CentroidsIn;
-RWStructuredBuffer<float3> _CentroidsOut;
+StructuredBuffer<float> _RespsIn;
+RWStructuredBuffer<float> _RespsOut;
 
-RWStructuredBuffer<float3> _CovariancesIn;
-RWStructuredBuffer<float3> _CovariancesOut;
+StructuredBuffer<float> _FracsIn;
+RWStructuredBuffer<float> _FracsOut;
 
-RWStructuredBuffer<float> _SumsIn;
-RWStructuredBuffer<float> _SumsOut;
+StructuredBuffer<float3> _MeansIn;
+RWStructuredBuffer<float3> _MeansOut;
 
-StructuredBuffer<float3> _Centroids;
-StructuredBuffer<float3> _Covariances;
+StructuredBuffer<float2x3> _CovariancesIn;
+RWStructuredBuffer<float2x3> _CovariancesOut;
 
-RWStructuredBuffer<float> _SqrtDetReciprocalsRW;
-RWStructuredBuffer<float3> _PrecisionsRW;
+StructuredBuffer<float> _LnDetsIn;
+RWStructuredBuffer<float> _LnDetsOut;
+
+StructuredBuffer<float3x3> _CholeskysIn;
+RWStructuredBuffer<float3x3> _CholeskysOut;
 
 uint _NumClusters;
 int _ClusterIndex;
-
-StructuredBuffer<float> _SqrtDetReciprocals;
-StructuredBuffer<float3> _Precisions;
+float _TotalSamples;
 
 float3 GetVoxelCenter(uint index)
 {
@@ -48,83 +51,94 @@ float3 GetVoxelCenter(uint index)
 }
 
 [numthreads(GROUP_SIZE, 1, 1)]
-void PreparePrecisionsAndDeterminants(uint3 id : SV_DispatchThreadID)
+void PrepareCholeskysAndLnDets(uint3 id : SV_DispatchThreadID)
 {
     if (id.x > _NumClusters - 1)
     {
         return;
     }
 
-    float3x3 cov = ReadMatrixSymmetric3x3(_Covariances, id.x);
-    float detReciprocal = 1.0 / DeterminantSymmetric(cov);
-    _SqrtDetReciprocalsRW[id.x] = detReciprocal;
-    WriteMatrixSymmetric3x3(_PrecisionsRW, id.x, InvertSymmetric(cov, detReciprocal));
+    float3x3 covariance = ReadMatrixSymmetric3x3(_CovariancesIn, id.x);
+    float3x3 cholesky = CholeskyCreate(covariance);
+    _CholeskysOut[id.x] = cholesky;
+    _LnDetsOut[id.x] = CholeskyLogDet(cholesky);
 }
 
 groupshared uint gs_IndirectArgsGroups;
 
+// Each thread processes one voxel, over all clusters.
 [numthreads(GROUP_SIZE, 1, 1)]
-void UpdateWeightsAndCentroids(uint3 id : SV_DispatchThreadID)
+void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
 {
     uint2 indexAndSize = _SelectedColorBins[id.x];
     float3 p = GetVoxelCenter(indexAndSize.x);
-    uint binSize = indexAndSize.y;
+    float binSize = indexAndSize.y;
+    
+    // For each cluster we have srcCount weights and Means.
+    uint srcCount = _IndirectArgsBufferIn[3];
 
-    // For each cluster we have srcCount weights and centroids.
-    uint srcCount = _IndirectArgsBuffer[3];
+    float maxResp = -9e99;
 
-    float sumWeights = 0;
-
+    // Evaluate responsibilities.
+    [loop]
+    for (uint k = 0; k != _NumClusters; ++k)
     {
-        [loop]
-        for (uint k = 0; k != _NumClusters; ++k)
-        {
-            float weight = max(EPSILON, GaussianDensity(p, _CentroidsIn[k], ReadMatrixSymmetric3x3(_Precisions, k), _SqrtDetReciprocals[k]));
-            _Weights[srcCount * k + id.x] = weight;
-            sumWeights += weight;
-        }
+        float3 u = p - _MeansIn[k];
+        float3 v = 0;
+        CholeskySolve(_CholeskysIn[k], u, v);
+        float resp = -0.5 * (dot(v, v) + _LnDetsIn[k]) + log(_FracsIn[k]);
+        maxResp = max(maxResp, resp);
+        _RespsOut[srcCount * k + id.x] = resp;
     }
 
+    // Log-sum-exp "trick".
+    float sum = 0;
+    for (k = 0; k != _NumClusters; ++k)
     {
-        [loop]
-        for (uint k = 0; k != _NumClusters; ++k)
-        {
-            uint dstIndex = srcCount * k + id.x;
-            float weight = _Weights[dstIndex] / sumWeights;
-            float sum = weight * binSize;
-            _Weights[dstIndex] = weight;
-            _SumsOut[dstIndex] = sum;
-            _CentroidsOut[dstIndex] = p * sum;
-        }
+        sum += exp(_RespsOut[srcCount * k + id.x] - maxResp);
+    }
+        
+    float tmp = maxResp + log(sum);
+
+    // Normalize responsibilities.
+    for (k = 0; k != _NumClusters; ++k)
+    {
+        uint dstIndex = srcCount * k + id.x;
+        float resp = exp(_RespsOut[dstIndex] - tmp) * binSize;
+
+        // Responsibilities will be reduced in _Weights.
+        _RespsOut[dstIndex] = resp;
+        _WeightsOut[dstIndex] = resp;
+        _MeansOut[dstIndex] = p * resp;
     }
 }
 
-groupshared float gs_Sums[GROUP_SIZE];
-groupshared float3 gs_Centroids[GROUP_SIZE];
+groupshared float gs_Weights[GROUP_SIZE];
+groupshared float3 gs_Means[GROUP_SIZE];
 
-// Reduce centroids. Each thread processes all clusters.
+// Reduce Means. Each thread processes all clusters.
 [numthreads(GROUP_SIZE, 1, 1)]
-void ReduceSumsAndCentroids(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_GroupID)
+void ReduceWeightsAndMeans(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_GroupID)
 {
     #define groupIndex groupId.x
     #define localThreadIndex threadId.x
     uint globalThreadIndex = groupIndex * GROUP_SIZE + localThreadIndex;
 
-    uint srcCount = _IndirectArgsBuffer[_IndirectArgsOffset + 3];
-    uint dstCount = _IndirectArgsBuffer[_IndirectArgsOffset + 0];
+    uint srcCount = _IndirectArgsBufferIn[_IndirectArgsOffset + 3];
+    uint dstCount = _IndirectArgsBufferIn[_IndirectArgsOffset + 0];
     uint srcOffset = srcCount * _ClusterIndex;
     uint dstOffset = dstCount * _ClusterIndex;
 
     // Copy to group memory.
     if (globalThreadIndex < srcCount)
     {
-        gs_Sums[localThreadIndex] = _SumsIn[srcOffset + globalThreadIndex];
-        gs_Centroids[localThreadIndex] = _CentroidsIn[srcOffset + globalThreadIndex];
+        gs_Weights[localThreadIndex] = _WeightsIn[srcOffset + globalThreadIndex];
+        gs_Means[localThreadIndex] = _MeansIn[srcOffset + globalThreadIndex];
     }
     else
     {
-        gs_Sums[localThreadIndex] = 0;
-        gs_Centroids[localThreadIndex] = (0).xxx;
+        gs_Weights[localThreadIndex] = 0;
+        gs_Means[localThreadIndex] = (0).xxx;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -135,8 +149,8 @@ void ReduceSumsAndCentroids(uint3 threadId : SV_GroupThreadID, uint3 groupId : S
     {
         if (localThreadIndex < s)
         {
-            gs_Sums[localThreadIndex] += gs_Sums[localThreadIndex + s];
-            gs_Centroids[localThreadIndex] += gs_Centroids[localThreadIndex + s];
+            gs_Weights[localThreadIndex] += gs_Weights[localThreadIndex + s];
+            gs_Means[localThreadIndex] += gs_Means[localThreadIndex + s];
         }
 
         GroupMemoryBarrierWithGroupSync();
@@ -145,31 +159,51 @@ void ReduceSumsAndCentroids(uint3 threadId : SV_GroupThreadID, uint3 groupId : S
     // Copy to global memory.
     if (localThreadIndex == 0u)
     {
-        _SumsOut[dstOffset + groupIndex] = gs_Sums[0];
-        _CentroidsOut[dstOffset + groupIndex] = gs_Centroids[0];
+        _WeightsOut[dstOffset + groupIndex] = gs_Weights[0];
+        _MeansOut[dstOffset + groupIndex] = gs_Means[0];
     }
+}
+
+[numthreads(GROUP_SIZE, 1, 1)]
+void NormalizeMeansAndFracs(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x > _NumClusters - 1)
+    {
+        return;
+    }
+
+    float weight = _WeightsIn[id.x];
+    _MeansOut[id.x] /= weight;
+    _FracsOut[id.x] = weight / _TotalSamples;
 }
 
 [numthreads(GROUP_SIZE, 1, 1)]
 void UpdateCovariances(uint3 id : SV_DispatchThreadID)
 {
-    uint index = _IndirectArgsBuffer[3] * _ClusterIndex + id.x;
+    uint index = _IndirectArgsBufferIn[3] * _ClusterIndex + id.x;
     uint2 indexAndSize = _SelectedColorBins[id.x];
     float3 p = GetVoxelCenter(indexAndSize.x);
-    float binSize = indexAndSize.y;
 
-    float weight = _Weights[index] * binSize;
-    float3 u = _CentroidsIn[_ClusterIndex] / _SumsIn[_ClusterIndex];
-    float3 dp = p - u;
+    float resp = _RespsIn[index];
+    float3 mean = _MeansIn[_ClusterIndex];
 
-    float3 row0 = float3(dp.x * dp.x, dp.x * dp.y, dp.x * dp.z) * weight;
-    float3 row1 = float3(dp.y * dp.y, dp.y * dp.z, dp.z * dp.z) * weight;
+    float3x3 covariance = 0;
 
-    _CovariancesOut[index * 2] = row0;
-    _CovariancesOut[index * 2 + 1] = row1;
+    // TODO Optimize?
+    [unroll(3)]
+    for(uint i = 0; i != 3; ++i)
+    {
+        [unroll(3)]
+        for(uint j = 0; j != 3; ++j)
+        {
+            covariance[i][j] = (p[i] - mean[i]) * (p[j] - mean[j]);
+        }
+    }
+    
+    WriteMatrixSymmetric3x3(_CovariancesOut, index, covariance * resp);
 }
 
-groupshared float3 gs_Covariances[GROUP_SIZE * 2];
+groupshared float2x3 gs_Covariances[GROUP_SIZE];
 
 [numthreads(GROUP_SIZE, 1, 1)]
 void ReduceCovariances(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_GroupID)
@@ -178,8 +212,8 @@ void ReduceCovariances(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_Gro
     #define localThreadIndex threadId.x
     uint globalThreadIndex = groupIndex * GROUP_SIZE + localThreadIndex;
 
-    uint srcCount = _IndirectArgsBuffer[_IndirectArgsOffset + 3];
-    uint dstCount = _IndirectArgsBuffer[_IndirectArgsOffset + 0];
+    uint srcCount = _IndirectArgsBufferIn[_IndirectArgsOffset + 3];
+    uint dstCount = _IndirectArgsBufferIn[_IndirectArgsOffset + 0];
     uint srcOffset = srcCount * _ClusterIndex;
     uint dstOffset = dstCount * _ClusterIndex;
 
@@ -187,13 +221,11 @@ void ReduceCovariances(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_Gro
 
     if (globalThreadIndex < srcCount)
     {
-        gs_Covariances[localThreadIndex * 2] = _CovariancesIn[(srcOffset + globalThreadIndex) * 2];
-        gs_Covariances[localThreadIndex * 2 + 1] = _CovariancesIn[(srcOffset + globalThreadIndex) * 2 + 1];
+        gs_Covariances[localThreadIndex] = _CovariancesIn[srcOffset + globalThreadIndex];
     }
     else
     {
-        gs_Covariances[localThreadIndex * 2] = float3(0, 0, 0);
-        gs_Covariances[localThreadIndex * 2 + 1] = float3(0, 0, 0);
+        gs_Covariances[localThreadIndex] = (float2x3)0;
     }
 
     GroupMemoryBarrierWithGroupSync();
@@ -204,8 +236,7 @@ void ReduceCovariances(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_Gro
     {
         if (localThreadIndex < s)
         {
-            gs_Covariances[localThreadIndex * 2] += gs_Covariances[(localThreadIndex + s) * 2];
-            gs_Covariances[localThreadIndex * 2 + 1] += gs_Covariances[(localThreadIndex + s) * 2 + 1];
+            gs_Covariances[localThreadIndex] += gs_Covariances[localThreadIndex + s];
         }
 
         GroupMemoryBarrierWithGroupSync();
@@ -213,21 +244,26 @@ void ReduceCovariances(uint3 threadId : SV_GroupThreadID, uint3 groupId : SV_Gro
 
     if (localThreadIndex == 0u)
     {
-        _CovariancesOut[(dstOffset + groupIndex) * 2] = gs_Covariances[0];
-        _CovariancesOut[(dstOffset + groupIndex) * 2 + 1] = gs_Covariances[1];
+        _CovariancesOut[dstOffset + groupIndex] = gs_Covariances[0];
     }
 }
 
 [numthreads(GROUP_SIZE, 1, 1)]
-void NormalizeCentroidsAndCovariances(uint3 id : SV_DispatchThreadID)
+void NormalizeCovariances(uint3 id : SV_DispatchThreadID)
 {
     if (id.x > _NumClusters - 1)
     {
         return;
     }
 
-    float sumReciprocal = 1.0 / _SumsIn[id.x];
-    _CentroidsIn[id.x] *= sumReciprocal;
-    _CovariancesIn[id.x * 2] *= sumReciprocal;
-    _CovariancesIn[id.x * 2 + 1] *= sumReciprocal;
+    // Normalization.
+    float3x3 covariance = ReadMatrixSymmetric3x3(_CovariancesOut, id.x) / _WeightsIn[id.x];
+
+    // Prevent covariance from becoming singular. 
+    float eps = 1e-6;
+    covariance[0][0] += eps;
+    covariance[1][1] += eps;
+    covariance[2][2] += eps;
+    
+    WriteMatrixSymmetric3x3(_CovariancesOut, id.x, covariance);
 }

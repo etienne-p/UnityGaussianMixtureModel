@@ -2,7 +2,6 @@
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 
 namespace GaussianMixtureModel
@@ -10,22 +9,29 @@ namespace GaussianMixtureModel
     struct VisualizationBuffers
     {
         public ComputeBuffer SelectedColorBins;
-        public ComputeBuffer Centroids;
+        public ComputeBuffer Means;
         public ComputeBuffer Covariances;
     }
 
     [ExecuteAlways]
-    public class GaussianMixtureModelDemo : MonoBehaviour
+    public class GaussianMixtureComponent : MonoBehaviour
     {
         const int k_MinIterations = 1;
         const int k_MaxIterations = 64;
         const int k_MinClusters = 2;
         const int k_MaxClusters = 32;
-        const int k_GuiSize = 512;
 
-        [SerializeField] ComputeShader m_InitShader;
-        [SerializeField] ComputeShader m_ConvergeShader;
-        [SerializeField] ComputeShader m_CholeskyShader;
+        [Tooltip("Assign \"Initialization.compute\".")] 
+        [SerializeField]
+        ComputeShader m_InitShader;
+
+        [Tooltip("Assign \"Converge.compute\".")] 
+        [SerializeField]
+        ComputeShader m_ConvergeShader;
+
+        [Tooltip("Assign \"Cholesky.compute\".")] 
+        [SerializeField]
+        ComputeShader m_CholeskyShader;
 
         [Tooltip("The image to be analyzed.")] 
         [SerializeField]
@@ -36,28 +42,22 @@ namespace GaussianMixtureModel
         [Range(k_MinClusters, k_MaxClusters)]
         int m_NumClusters;
 
-        [Tooltip("The number of iterations of Expectation Maximization.")]
+        [Tooltip("The number of convergence steps of Expectation Maximization.")]
         [SerializeField]
         [Range(k_MinIterations, k_MaxIterations)]
         int m_Iterations;
 
-        [SerializeField] [Range(.01f, .5f)] float m_Delay;
-
-        [SerializeField] OrbitTransform m_View;
+        [Tooltip("The delay elapsed between each convergence step.")]
+        [SerializeField] 
+        [Range(.01f, .5f)] 
+        float m_Delay;
 
         readonly Visualizer m_Visualizer = new();
         readonly ExpectationMaximization m_ExpectationMaximization = new();
         CommandBuffer m_ComputeCommandBuffer;
-        CommandBuffer m_VisualizeCommandBuffer;
-        RenderTexture m_VisualizationTarget;
-        int m_VisualizationHashcode;
         int m_NumSelectedColorBins;
         int m_BuffersGeneration;
         bool m_PendingComputeCapture;
-        bool m_PendingVisualizationCapture;
-        bool m_PendingViewUpdate;
-        bool m_ShouldSchedulePlayerLoopUpdate;
-        readonly Rect m_GuiRect = new(0, 0, k_GuiSize, k_GuiSize);
 
         void SetNumSelectedColorBins(int count) => m_NumSelectedColorBins = count;
 
@@ -66,11 +66,6 @@ namespace GaussianMixtureModel
             m_ComputeCommandBuffer = new CommandBuffer
             {
                 name = "Expectation-Maximization"
-            };
-
-            m_VisualizeCommandBuffer = new CommandBuffer
-            {
-                name = "Visualization"
             };
 
             m_ExpectationMaximization.Initialize(m_InitShader, m_ConvergeShader);
@@ -82,18 +77,13 @@ namespace GaussianMixtureModel
         {
             m_ExpectationMaximization.NumColorBinsEvaluated -= SetNumSelectedColorBins;
             StopAllCoroutines();
-            
+
             m_ExpectationMaximization.Dispose();
             m_Visualizer.Dispose();
             m_ComputeCommandBuffer.Dispose();
-            m_VisualizeCommandBuffer.Dispose();
-            
-            Utilities.DeallocateIfNeeded(ref m_VisualizationTarget);
-            
+
             m_PendingComputeCapture = false;
-            m_PendingVisualizationCapture = false;
-            m_PendingViewUpdate = false;
-            m_ShouldSchedulePlayerLoopUpdate = false;
+            SetContinuousEditorUpdate(false);
             m_NumSelectedColorBins = 0;
         }
 
@@ -103,76 +93,57 @@ namespace GaussianMixtureModel
             m_Iterations = math.clamp(m_Iterations, k_MinIterations, k_MaxIterations);
         }
 
-        void OnGUI()
+        public int GetVisualizationHashcode()
         {
-            if (m_VisualizationTarget != null)
-            {
-                GUI.DrawTexture(m_GuiRect, m_VisualizationTarget);
-            }
-        }
-
-        void Update()
-        {
-            if (m_Source == null || m_NumSelectedColorBins == 0)
-            {
-                return;
-            }
-
-            var visualizationHashcode = m_View.GetPropertiesHashCode();
+            var visualizationHashcode = m_NumClusters;
 
             unchecked
             {
-                visualizationHashcode = (visualizationHashcode * 397) ^ m_NumClusters;
                 visualizationHashcode = (visualizationHashcode * 397) ^ m_BuffersGeneration;
             }
 
-            if (visualizationHashcode != m_VisualizationHashcode)
-            {
-                m_VisualizationHashcode = visualizationHashcode;
-
-                var buffers = new VisualizationBuffers
-                {
-                    SelectedColorBins = m_ExpectationMaximization.SelectedColorBinsBuffer,
-                    Centroids = m_ExpectationMaximization.CentroidsBuffer,
-                    Covariances = m_ExpectationMaximization.CovariancesBuffer
-                };
-
-                UpdateVisualization(buffers);
-            }
-
-#if UNITY_EDITOR
-            if (m_ShouldSchedulePlayerLoopUpdate)
-            {
-                UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
-            }
-#endif
+            return visualizationHashcode;
         }
 
-        void UpdateVisualization(VisualizationBuffers resultBuffers)
+        public bool TryRenderVisualization(CommandBuffer cmd, RenderTexture target, float4x4 viewProjection)
         {
-            Utilities.AllocateIfNeededForCompute(ref m_VisualizationTarget, k_GuiSize, k_GuiSize,
-                GraphicsFormat.R8G8B8A8_UNorm);
+            if (m_Source == null || m_NumSelectedColorBins == 0)
+            {
+                return false;
+            }
+
+            var buffers = new VisualizationBuffers
+            {
+                SelectedColorBins = m_ExpectationMaximization.SelectedColorBinsBuffer,
+                Means = m_ExpectationMaximization.MeansBuffer,
+                Covariances = m_ExpectationMaximization.CovariancesBuffer
+            };
+
+            if (buffers.SelectedColorBins == null ||
+                buffers.Means == null ||
+                buffers.Covariances == null)
+            {
+                return false;
+            }
 
             // In marginal case we could imagine the source changing so that it is out-of-sync with compute buffers.
             // We accept this for the time being.
             var totalSamples = m_Source.width * m_Source.height;
 
-            m_Visualizer.Render(
-                m_VisualizeCommandBuffer, m_VisualizationTarget, m_View,
-                totalSamples, m_NumClusters, m_NumSelectedColorBins, resultBuffers);
+            cmd.SetRenderTarget(target);
+            cmd.ClearRenderTarget(true, true, Color.black);
 
-            ExecuteCommandBuffer(m_VisualizeCommandBuffer, m_PendingVisualizationCapture);
-            m_PendingVisualizationCapture = false;
+            m_Visualizer.Render(
+                cmd, viewProjection,
+                totalSamples, m_NumClusters, m_NumSelectedColorBins, buffers);
+            return true;
         }
 
         [ContextMenu("DEBUG - Compute Capture")]
         void ScheduleCapture() => m_PendingComputeCapture = true;
 
-        [ContextMenu("DEBUG - Visualization Capture")]
-        void ScheduleVizCapture() => m_PendingVisualizationCapture = true;
-
         [ContextMenu("Execute")]
-        void StartExecution()
+        public void StartExecution()
         {
             StopAllCoroutines();
             StartCoroutine(Execute(m_PendingComputeCapture, m_Iterations));
@@ -187,24 +158,25 @@ namespace GaussianMixtureModel
                 yield break;
             }
 
-            m_ShouldSchedulePlayerLoopUpdate = true;
+            SetContinuousEditorUpdate(true);
             m_NumSelectedColorBins = 0;
 
-            var initialCentroids = new NativeArray<float3>(m_NumClusters, Allocator.Temp);
-            Utilities.AllocateNativeArrayIfNeeded(ref initialCentroids, m_NumClusters);
+            var initialMeans = new NativeArray<float3>(m_NumClusters, Allocator.Temp);
 
-            // To initialize centroids we use evenly distributed hues.
-            for (var i = 0; i != initialCentroids.Length; ++i)
+            // To initialize Means we use evenly distributed hues.
+            for (var i = 0; i != initialMeans.Length; ++i)
             {
-                initialCentroids[i] = Color.HSVToRGB((float)i / initialCentroids.Length, .5f, .5f).ToFloat3();
+                initialMeans[i] = Color.HSVToRGB((float)i / initialMeans.Length, .5f, .5f).ToFloat3();
             }
 
+            var totalSamples = m_Source.width * m_Source.height;
+
             // TODO Infer useGamma from source?
-            m_ExpectationMaximization.InitializationStep(m_ComputeCommandBuffer, initialCentroids, m_Source, true);
+            m_ExpectationMaximization.InitializationStep(m_ComputeCommandBuffer, initialMeans, m_Source, true);
 
             ExecuteCommandBuffer(m_ComputeCommandBuffer, capture);
             ++m_BuffersGeneration;
-            
+
             // Wait for readback completion.
             while (m_NumSelectedColorBins == 0)
             {
@@ -215,13 +187,13 @@ namespace GaussianMixtureModel
             {
                 yield return new WaitForSeconds(m_Delay);
 
-                m_ExpectationMaximization.ConvergenceStep(m_ComputeCommandBuffer);
+                m_ExpectationMaximization.ConvergenceStep(m_ComputeCommandBuffer, totalSamples);
 
                 ExecuteCommandBuffer(m_ComputeCommandBuffer, capture);
                 ++m_BuffersGeneration;
             }
 
-            m_ShouldSchedulePlayerLoopUpdate = false;
+            SetContinuousEditorUpdate(false);
         }
 
         static void ExecuteCommandBuffer(CommandBuffer cmd, bool capture)
@@ -239,6 +211,39 @@ namespace GaussianMixtureModel
             }
 
             cmd.Clear();
+        }
+        
+        static bool s_ContinuousEditorUpdate;
+
+        static void SetContinuousEditorUpdate(bool value)
+        {
+#if UNITY_EDITOR
+            if (s_ContinuousEditorUpdate == value)
+            {
+                return;
+            }
+
+            s_ContinuousEditorUpdate = value;
+
+            if (s_ContinuousEditorUpdate)
+            {
+                UnityEditor.EditorApplication.update += QueueUpdate;
+            }
+            else
+            {
+                UnityEditor.EditorApplication.update -= QueueUpdate;
+            }
+#endif
+        }
+        
+        static void QueueUpdate()
+        {
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
+            }
+#endif
         }
     }
 }

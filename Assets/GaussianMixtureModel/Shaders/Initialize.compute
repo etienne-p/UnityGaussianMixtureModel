@@ -3,30 +3,27 @@
 #define GRID_SIZE 32
 #define GROUP_SIZE 32
 
-//#pragma enable_d3d11_debug_symbols
+#pragma enable_d3d11_debug_symbols
 #pragma multi_compile_local _ USE_GAMMA_SPACE
 
 #pragma kernel ResetColorBins
 #pragma kernel UpdateColorBins
 #pragma kernel SelectColorBins
 #pragma kernel UpdateIndirectArgs
-#pragma kernel ResetCovariances
-
-float2 _SourceSize;
-Texture2D<float3> _SourceTexture;
+#pragma kernel ResetCovariancesAndFracs
 
 RWStructuredBuffer<uint> _ColorBins;
 AppendStructuredBuffer<uint2> _AppendSelectedColorBins;
 
-RWBuffer<uint> _IndirectArgsBuffer;
+RWBuffer<uint> _IndirectArgsBufferOut;
 
-RWStructuredBuffer<float3> _CentroidsIn;
-RWStructuredBuffer<float3> _CovariancesIn;
+RWStructuredBuffer<float2x3> _CovariancesOut;
+RWStructuredBuffer<float> _FracsOut;
 
-StructuredBuffer<float3> _Centroids;
-StructuredBuffer<float3> _Covariances;
-StructuredBuffer<float> _SqrtDetReciprocals;
-StructuredBuffer<float3> _Precisions;
+float2 _SourceSize;
+Texture2D<float3> _SourceTexture;
+
+uint _NumClusters;
 
 [numthreads(GROUP_SIZE, 1 ,1)]
 void ResetColorBins(uint3 id : SV_DispatchThreadID)
@@ -72,10 +69,12 @@ void UpdateIndirectArgs(uint3 id : SV_DispatchThreadID)
 {
     if (id.x == 0u)
     {
-        gs_IndirectArgsGroups = _IndirectArgsBuffer[0];
+        gs_IndirectArgsGroups = _IndirectArgsBufferOut[0];
     }
 
-    // The barrier lets us proceed in a "serial" manner. Each step is evaluated based on the previous one.
+    // The barrier lets us proceed in a "serial" manner.
+    // Each step is evaluated based on the previous one,
+    // but in a separate thread.
     for (uint i = 0; i != INDIRECT_ARGS_THREADS; ++i)
     {
         GroupMemoryBarrierWithGroupSync();
@@ -85,19 +84,31 @@ void UpdateIndirectArgs(uint3 id : SV_DispatchThreadID)
             uint count = gs_IndirectArgsGroups;
             gs_IndirectArgsGroups = ceil((float)gs_IndirectArgsGroups / GROUP_SIZE);
 
-            _IndirectArgsBuffer[id.x * 4] = gs_IndirectArgsGroups;
-            _IndirectArgsBuffer[id.x * 4 + 1] = 1;
-            _IndirectArgsBuffer[id.x * 4 + 2] = 1;
-            _IndirectArgsBuffer[id.x * 4 + 3] = count;
+            _IndirectArgsBufferOut[id.x * 4] = gs_IndirectArgsGroups;
+            _IndirectArgsBufferOut[id.x * 4 + 1] = 1;
+            _IndirectArgsBufferOut[id.x * 4 + 2] = 1;
+            _IndirectArgsBufferOut[id.x * 4 + 3] = count;
         }
     }
 }
 
 [numthreads(GROUP_SIZE, 1 ,1)]
-void ResetCovariances(uint3 id : SV_DispatchThreadID)
+void ResetCovariancesAndFracs(uint3 id : SV_DispatchThreadID)
 {
-    // Identity-matrix * Epsilon.
-    float e = 1e-3;
-    _CovariancesIn[id.x * 2] = float3(e, 0, 0);
-    _CovariancesIn[id.x * 2 + 1] = float3(e, 0, e);
+    if (id.x > _NumClusters - 1)
+    {
+        return;
+    }
+
+    _FracsOut[id.x] = 1.0 / _NumClusters;
+    
+    static float3x3 Identity3x3 =
+    {
+        { 1, 0, 0 },
+        { 0, 1, 0 },
+        { 0, 0, 1 }
+    };
+
+    // Start with clusters that are "large" enough to encompass some samples.
+    WriteMatrixSymmetric3x3(_CovariancesOut, id.x, Identity3x3 * 1e-2);
 }

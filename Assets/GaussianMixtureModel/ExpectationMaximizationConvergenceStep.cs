@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Unity.Mathematics;
+using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace GaussianMixtureModel
@@ -7,82 +8,76 @@ namespace GaussianMixtureModel
     {
         const int k_MaxRequiredReductionSteps = 3;
 
-        public void ConvergenceStep(CommandBuffer cmd)
+        public void ConvergenceStep(CommandBuffer cmd, float totalSamples)
         {
             var numWeights = k_VoxelCount * m_NumClusters;
 
             cmd.SetComputeIntParam(m_ConvergeShader, ShaderIds._NumClusters, m_NumClusters);
 
-            PreparePrecisionsAndDeterminants(cmd);
-            UpdateWeightsAndCentroids(cmd, numWeights);
-            ReduceSumsAndCentroids(cmd);
+            PrepareCholeskysAndLnDets(cmd);
+            UpdateRespsAndMeans(cmd, numWeights);
+            ReduceWeightsAndMeans(cmd);
+            NormalizeMeansAndFracs(cmd, totalSamples);
             UpdateCovariances(cmd);
             ReduceCovariances(cmd);
-            NormalizeCentroidsAndCovariance(cmd);
+            NormalizeCovariances(cmd);
         }
 
-        void PreparePrecisionsAndDeterminants(CommandBuffer cmd)
+        void PrepareCholeskysAndLnDets(CommandBuffer cmd)
         {
-            // We pad buffers to avoid index checks in each kernel execution.
-            static int PadToFitGroupSize(int size) => Mathf.CeilToInt(size / (float)k_GroupSize) * k_GroupSize;
-            
-            Utilities.AllocateBufferIfNeeded<float>(ref m_SqrtDetReciprocalsBuffer,
-                PadToFitGroupSize(m_NumClusters));
-
-            // Note the * 2, We encode symmetric matrices using 2 float3.
-            Utilities.AllocateBufferIfNeeded<Vector3>(ref m_PrecisionsBuffer,
-                PadToFitGroupSize(m_NumClusters * 2));
+            Utilities.AllocateBufferIfNeeded<float>(ref m_LnDetsBuffer, m_NumClusters);
+            Utilities.AllocateBufferIfNeeded<float3x3>(ref m_CholeskysBuffer, m_NumClusters);
 
             var shader = m_ConvergeShader;
-            var kernel = m_ConvergeKernelIds.PreparePrecisionsAndDeterminants;
+            var kernel = m_ConvergeKernelIds.PrepareCholeskysAndLnDets;
 
             cmd.SetComputeIntParam(shader, ShaderIds._NumClusters, m_NumClusters);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._Covariances, m_CovarianceBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._PrecisionsRW, m_PrecisionsBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SqrtDetReciprocalsRW, m_SqrtDetReciprocalsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CovariancesIn, m_CovarianceBuffer.In);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CholeskysOut, m_CholeskysBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._LnDetsOut, m_LnDetsBuffer);
 
             var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
             cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
         }
 
-        void UpdateWeightsAndCentroids(CommandBuffer cmd, int numWeights)
+        void UpdateRespsAndMeans(CommandBuffer cmd, int numWeights)
         {
-            Utilities.AllocateBufferIfNeeded<Vector3>(ref m_WeightsBuffer, numWeights);
-
-            // TODO Optimization can allocate less memory for the Out buffer.
-            // TODO Is there a way to apply normalization earlier?
-            m_SumBuffer.AllocateIfNeeded(numWeights);
-
+            Utilities.AllocateBufferIfNeeded<float>(ref m_RespsBuffer, numWeights);
+            m_WeightsBuffer.AllocateIfNeeded(numWeights);
+            
             var shader = m_ConvergeShader;
-            var kernel = m_ConvergeKernelIds.UpdateWeightsAndCentroids;
+            var kernel = m_ConvergeKernelIds.UpdateRespsAndMeans;
 
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBuffer, m_IndirectArgsBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._Weights, m_WeightsBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsIn, m_CentroidBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsOut, m_CentroidBuffer.Out);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SqrtDetReciprocals, m_SqrtDetReciprocalsBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._Precisions, m_PrecisionsBuffer);
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SelectedColorBins, m_SelectedColorBinBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SumsOut, m_SumBuffer.Out);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBufferIn, m_IndirectArgsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansIn, m_CentroidBuffer.In);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CholeskysIn, m_CholeskysBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._LnDetsIn, m_LnDetsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._FracsIn, m_FracsBuffer);
+
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._RespsOut, m_RespsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsOut, m_WeightsBuffer.Out);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansOut, m_CentroidBuffer.Out);
+
             cmd.DispatchCompute(shader, kernel, m_IndirectArgsBuffer, 0);
         }
         
-        void ReduceSumsAndCentroids(CommandBuffer cmd)
+        void ReduceWeightsAndMeans(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;
-            var kernel = m_ConvergeKernelIds.ReduceSumsAndCentroids;
+            var kernel = m_ConvergeKernelIds.ReduceWeightsAndMeans;
 
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBuffer, m_IndirectArgsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBufferIn, m_IndirectArgsBuffer);
 
             for (var i = 0; i != k_MaxRequiredReductionSteps; ++i)
             {
-                m_SumBuffer.Swap();
+                m_WeightsBuffer.Swap();
                 m_CentroidBuffer.Swap();
                 cmd.SetComputeIntParam(shader, ShaderIds._IndirectArgsOffset, 4 * i);
-                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SumsIn, m_SumBuffer.In);
-                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SumsOut, m_SumBuffer.Out);
-                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsIn, m_CentroidBuffer.In);
-                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsOut, m_CentroidBuffer.Out);
+                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsIn, m_WeightsBuffer.In);
+                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsOut, m_WeightsBuffer.Out);
+                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansIn, m_CentroidBuffer.In);
+                cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansOut, m_CentroidBuffer.Out);
 
                 for (var k = 0; k != m_NumClusters; ++k)
                 {
@@ -91,20 +86,35 @@ namespace GaussianMixtureModel
                 }
             }
 
-            m_SumBuffer.Swap();
+            m_WeightsBuffer.Swap();
             m_CentroidBuffer.Swap();
         }
 
+        void NormalizeMeansAndFracs(CommandBuffer cmd, float totalSamples)
+        {
+            var shader = m_ConvergeShader;
+            var kernel = m_ConvergeKernelIds.NormalizeMeansAndFracs;
+
+            // Means are normalized *in place*.
+            cmd.SetComputeFloatParam(shader, ShaderIds._TotalSamples, totalSamples);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._FracsOut, m_FracsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsIn, m_WeightsBuffer.In);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansOut, m_CentroidBuffer.In);
+
+            // We only want to process m_NumClusters items.
+            var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
+            cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
+        }
+        
         void UpdateCovariances(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;
             var kernel = m_ConvergeKernelIds.UpdateCovariances;
 
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBuffer, m_IndirectArgsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBufferIn, m_IndirectArgsBuffer);
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SelectedColorBins, m_SelectedColorBinBuffer);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsIn, m_CentroidBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SumsIn, m_SumBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._Weights, m_WeightsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansIn, m_CentroidBuffer.In);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._RespsIn, m_RespsBuffer);
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CovariancesOut, m_CovarianceBuffer.Out);
 
             for (var k = 0; k != m_NumClusters; ++k)
@@ -119,7 +129,7 @@ namespace GaussianMixtureModel
             var shader = m_ConvergeShader;
             var kernel = m_ConvergeKernelIds.ReduceCovariances;
 
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBuffer, m_IndirectArgsBuffer);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._IndirectArgsBufferIn, m_IndirectArgsBuffer);
 
             for (var i = 0; i != k_MaxRequiredReductionSteps; ++i)
             {
@@ -138,16 +148,15 @@ namespace GaussianMixtureModel
             m_CovarianceBuffer.Swap();
         }
         
-        void NormalizeCentroidsAndCovariance(CommandBuffer cmd)
+        void NormalizeCovariances(CommandBuffer cmd)
         {
             var shader = m_ConvergeShader;
-            var kernel = m_ConvergeKernelIds.NormalizeCentroidsAndCovariances;
+            var kernel = m_ConvergeKernelIds.NormalizeCovariances;
 
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CovariancesIn, m_CovarianceBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CentroidsIn, m_CentroidBuffer.In);
-            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._SumsIn, m_SumBuffer.In);
+            // Covariance is normalized *in-place*.
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsIn, m_WeightsBuffer.In);
+            cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CovariancesOut, m_CovarianceBuffer.In);
 
-            // We only want to process m_NumClusters items.
             var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
             cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
         }

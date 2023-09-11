@@ -6,8 +6,6 @@ using UnityEngine.Rendering;
 
 namespace GaussianMixtureModel
 {
-    /// <summary>
-    /// </summary>
     partial class ExpectationMaximization
     {
         class InitKernelIds
@@ -16,17 +14,18 @@ namespace GaussianMixtureModel
             public int UpdateColorBins;
             public int SelectColorBins;
             public int UpdateIndirectArgs;
-            public int ResetCovariances;
+            public int ResetCovariancesAndFracs;
         }
         
         class ConvergeKernelIds
         {
-            public int PreparePrecisionsAndDeterminants;
-            public int UpdateWeightsAndCentroids;
-            public int ReduceSumsAndCentroids;
+            public int PrepareCholeskysAndLnDets;
+            public int UpdateRespsAndMeans;
+            public int ReduceWeightsAndMeans;
+            public int NormalizeMeansAndFracs;
             public int UpdateCovariances;
             public int ReduceCovariances;
-            public int NormalizeCentroidsAndCovariances;
+            public int NormalizeCovariances;
         }
 
         const int k_GroupSize = 32;
@@ -34,13 +33,14 @@ namespace GaussianMixtureModel
         const int k_GridSize = 32;
         const int k_VoxelCount = k_GridSize * k_GridSize * k_GridSize;
 
-        readonly DoubleBuffer<float> m_SumBuffer = new();
+        readonly DoubleBuffer<float> m_WeightsBuffer = new();
         readonly DoubleBuffer<float3> m_CentroidBuffer = new();
-        readonly DoubleBuffer<float3> m_CovarianceBuffer = new();
+        readonly DoubleBuffer<float2x3> m_CovarianceBuffer = new();
         ComputeBuffer m_ColorBinsBuffer;
-        ComputeBuffer m_PrecisionsBuffer;
-        ComputeBuffer m_SqrtDetReciprocalsBuffer;
-        ComputeBuffer m_WeightsBuffer;
+        ComputeBuffer m_CholeskysBuffer;
+        ComputeBuffer m_FracsBuffer;
+        ComputeBuffer m_LnDetsBuffer;
+        ComputeBuffer m_RespsBuffer;
         ComputeBuffer m_SelectedColorBinBuffer;
         ComputeBuffer m_IndirectArgsBuffer;
         NativeArray<uint> m_NumSelectedColorBins;
@@ -53,7 +53,7 @@ namespace GaussianMixtureModel
 
         // Exposed as it is useful for visualization.
         public Action<int> NumColorBinsEvaluated = delegate { };
-        public ComputeBuffer CentroidsBuffer => m_CentroidBuffer.In;
+        public ComputeBuffer MeansBuffer => m_CentroidBuffer.In;
         public ComputeBuffer CovariancesBuffer => m_CovarianceBuffer.In;
         public ComputeBuffer SelectedColorBinsBuffer => m_SelectedColorBinBuffer;
 
@@ -72,6 +72,7 @@ namespace GaussianMixtureModel
             m_InitShader = initShader;
             m_ConvergeShader = convergeShader;
             m_UseGammaKeyword = new LocalKeyword(m_InitShader, "USE_GAMMA_SPACE");
+            
             Utilities.LoadKernelIndices(m_InitShader, m_InitKernelIds);
             Utilities.LoadKernelIndices(m_ConvergeShader, m_ConvergeKernelIds);
             Utilities.AllocateNativeArrayIfNeeded(ref m_NumSelectedColorBins, 1);
@@ -80,12 +81,15 @@ namespace GaussianMixtureModel
         public void Dispose()
         {
             Utilities.DeallocateNativeArrayIfNeeded(ref m_NumSelectedColorBins);
-            m_SumBuffer.Dispose();
+            
+            m_WeightsBuffer.Dispose();
             m_CentroidBuffer.Dispose();
             m_CovarianceBuffer.Dispose();
-            Utilities.DeallocateIfNeeded(ref m_PrecisionsBuffer);
-            Utilities.DeallocateIfNeeded(ref m_SqrtDetReciprocalsBuffer);
-            Utilities.DeallocateIfNeeded(ref m_WeightsBuffer);
+            
+            Utilities.DeallocateIfNeeded(ref m_FracsBuffer);
+            Utilities.DeallocateIfNeeded(ref m_CholeskysBuffer);
+            Utilities.DeallocateIfNeeded(ref m_LnDetsBuffer);
+            Utilities.DeallocateIfNeeded(ref m_RespsBuffer);
             Utilities.DeallocateIfNeeded(ref m_SelectedColorBinBuffer);
             Utilities.DeallocateIfNeeded(ref m_IndirectArgsBuffer);
             Utilities.DeallocateIfNeeded(ref m_ColorBinsBuffer);

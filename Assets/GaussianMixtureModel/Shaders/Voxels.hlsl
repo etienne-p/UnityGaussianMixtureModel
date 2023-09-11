@@ -30,7 +30,8 @@ Varyings Vertex(Attributes input)
     float3 center = (id3d + (0.5).xxx) / (float)(GRID_SIZE).xxx;
     float scale1d = min(1, (float)colorBin.y / _MaxBinSize);
     // Note that we scale the volume, for an accurate perception.
-    float scale3d = pow(scale1d, 1.0 / 3.0);
+    // abs() was added to silence warnings, not required.
+    float scale3d = pow(abs(scale1d), 1.0 / 3.0);
     float3 position = center + input.vertex.xyz * scale3d / (float)(GRID_SIZE).xxx;
 
     float4 clipPosition = mul(_ViewProjection, float4(position, 1));

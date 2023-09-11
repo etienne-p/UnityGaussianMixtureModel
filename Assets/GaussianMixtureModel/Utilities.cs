@@ -12,7 +12,7 @@ using UnityEditor;
 
 namespace GaussianMixtureModel
 {
-    static class Utilities
+    public static class Utilities
     {
         public static float3 ToFloat3(this Color value)
         {
