@@ -1,3 +1,4 @@
+using System;
 using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
@@ -12,6 +13,11 @@ namespace GaussianMixtureModel
         {
             Assert.IsTrue(initialMeans.Length > 0);
             Assert.IsNotNull(source);
+
+            if (initialMeans.Length > k_MaxClusters)
+            {
+                throw new InvalidOperationException($"Supports up to {k_MaxClusters}, passed {initialMeans.Length}.");
+            }
 
             // Reset previous value, we monitor it for visualization.
             m_NumSelectedColorBins[0] = 0;

@@ -29,7 +29,7 @@ namespace GaussianMixtureModel
         }
 
         const int k_GroupSize = 32;
-
+        const int k_MaxClusters = 32;
         const int k_GridSize = 32;
         const int k_VoxelCount = k_GridSize * k_GridSize * k_GridSize;
 

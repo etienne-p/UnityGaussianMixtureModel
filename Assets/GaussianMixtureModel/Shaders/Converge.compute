@@ -3,6 +3,7 @@
 
 #define GRID_SIZE 32
 #define GROUP_SIZE 32
+#define MAX_CLUSTERS 32
 
 #pragma enable_d3d11_debug_symbols
 
@@ -66,6 +67,8 @@ void PrepareCholeskysAndLnDets(uint3 id : SV_DispatchThreadID)
 
 groupshared uint gs_IndirectArgsGroups;
 
+static float tmpResps[MAX_CLUSTERS];
+
 // Each thread processes one voxel, over all clusters.
 [numthreads(GROUP_SIZE, 1, 1)]
 void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
@@ -87,14 +90,14 @@ void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
         CholeskySolve(_CholeskysIn[k], u, v);
         float resp = -0.5 * (dot(v, v) + _LnDetsIn[k]) + log(_FracsIn[k]);
         maxResp = max(maxResp, resp);
-        _RespsOut[eltsPerCluster * k + id.x] = resp;
+        tmpResps[k] = resp;
     }
 
     // Log-sum-exp "trick".
     float sum = 0;
     for (k = 0; k != _NumClusters; ++k)
     {
-        sum += exp(_RespsOut[eltsPerCluster * k + id.x] - maxResp);
+        sum += exp(tmpResps[k] - maxResp);
     }
         
     float tmp = maxResp + log(sum);
@@ -102,10 +105,10 @@ void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
     // Normalize responsibilities.
     for (k = 0; k != _NumClusters; ++k)
     {
-        uint dstIndex = eltsPerCluster * k + id.x;
-        float resp = exp(_RespsOut[dstIndex] - tmp) * binSize;
+        float resp = exp(tmpResps[k] - tmp) * binSize;
 
         // Responsibilities will be reduced in _Weights.
+        uint dstIndex = eltsPerCluster * k + id.x;
         _RespsOut[dstIndex] = resp;
         _WeightsOut[dstIndex] = resp;
         _MeansOut[dstIndex] = p * resp;
