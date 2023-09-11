@@ -107,7 +107,7 @@ namespace GaussianMixtureModel.Editor
         Image m_Image;
         RenderTexture m_Target;
         CommandBuffer m_CommandBuffer;
-        GaussianMixtureComponent m_GaussianMixture;
+        GaussianMixtureModelComponent m_GaussianMixtureModel;
         int m_RenderHashcode;
 
         public OrbitTransform OrbitTransform
@@ -118,7 +118,7 @@ namespace GaussianMixtureModel.Editor
 
         public void CreateGUI()
         {
-            m_HelpBox = new HelpBox($"Select a game object holding a {nameof(GaussianMixtureComponent)} component in the hierarchy.", HelpBoxMessageType.Error);
+            m_HelpBox = new HelpBox($"Select a game object holding a {nameof(GaussianMixtureModelComponent)} component in the hierarchy.", HelpBoxMessageType.Error);
             rootVisualElement.Add(m_HelpBox);
 
             m_Container = new VisualElement();
@@ -156,7 +156,7 @@ namespace GaussianMixtureModel.Editor
 
         void Update()
         {
-            if (m_GaussianMixture == null || m_Target == null)
+            if (m_GaussianMixtureModel == null || m_Target == null)
             {
                 return;
             }
@@ -164,14 +164,14 @@ namespace GaussianMixtureModel.Editor
             var renderHashcode = m_OrbitTransform.GetPropertiesHashCode();
             unchecked
             {
-                renderHashcode = (renderHashcode * 397) ^ m_GaussianMixture.GetVisualizationHashcode();
+                renderHashcode = (renderHashcode * 397) ^ m_GaussianMixtureModel.GetVisualizationHashcode();
                 renderHashcode = (renderHashcode * 397) ^ m_Target.width;
                 renderHashcode = (renderHashcode * 397) ^ m_Target.height;
             }
 
             var aspect = m_Target.width / (float)m_Target.height;
 
-            if (renderHashcode != m_RenderHashcode && m_GaussianMixture.TryRenderVisualization(
+            if (renderHashcode != m_RenderHashcode && m_GaussianMixtureModel.TryRenderVisualization(
                 m_CommandBuffer, m_Target, m_OrbitTransform.GetViewProjection(aspect)))
             {
                 Graphics.ExecuteCommandBuffer(m_CommandBuffer);
@@ -195,9 +195,9 @@ namespace GaussianMixtureModel.Editor
 
         void TryStartExecution()
         {
-            if (m_GaussianMixture != null)
+            if (m_GaussianMixtureModel != null)
             {
-                m_GaussianMixture.StartExecution();
+                m_GaussianMixtureModel.StartExecution();
             }
         }
 
@@ -218,14 +218,14 @@ namespace GaussianMixtureModel.Editor
             m_RenderHashcode = 0;
 
             var go = Selection.activeGameObject;
-            if (go != null && go.TryGetComponent(typeof(GaussianMixtureComponent), out var gmm))
+            if (go != null && go.TryGetComponent(typeof(GaussianMixtureModelComponent), out var gmm))
             {
-                m_GaussianMixture = (GaussianMixtureComponent)gmm;
+                m_GaussianMixtureModel = (GaussianMixtureModelComponent)gmm;
                 ShowHelpBox(false);
             }
             else
             {
-                m_GaussianMixture = null;
+                m_GaussianMixtureModel = null;
                 ShowHelpBox(true);
             }
         }
