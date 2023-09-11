@@ -185,21 +185,13 @@ void UpdateCovariances(uint3 id : SV_DispatchThreadID)
 
     float resp = _RespsIn[index];
     float3 mean = _MeansIn[_ClusterIndex];
-
-    float3x3 covariance = 0;
-
-    // TODO Optimize?
-    [unroll(3)]
-    for(uint i = 0; i != 3; ++i)
-    {
-        [unroll(3)]
-        for(uint j = 0; j != 3; ++j)
-        {
-            covariance[i][j] = (p[i] - mean[i]) * (p[j] - mean[j]);
-        }
-    }
+    float3 d = p - mean;
     
-    WriteMatrixSymmetric3x3(_CovariancesOut, index, covariance * resp);
+    float2x3 covariance = 0;
+    covariance[0] = float3(d.x * d.x, d.x * d.y, d.x * d.z);
+    covariance[1] = float3(d.y * d.y, d.y * d.z, d.z * d.z);
+
+    _CovariancesOut[index] = covariance * resp;
 }
 
 groupshared float2x3 gs_Covariances[GROUP_SIZE];
