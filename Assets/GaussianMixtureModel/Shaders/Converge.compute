@@ -74,8 +74,7 @@ void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
     float3 p = GetVoxelCenter(indexAndSize.x);
     float binSize = indexAndSize.y;
     
-    // For each cluster we have srcCount weights and Means.
-    uint srcCount = _IndirectArgsBufferIn[3];
+    uint eltsPerCluster = _IndirectArgsBufferIn[3];
 
     float maxResp = -9e99;
 
@@ -88,14 +87,14 @@ void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
         CholeskySolve(_CholeskysIn[k], u, v);
         float resp = -0.5 * (dot(v, v) + _LnDetsIn[k]) + log(_FracsIn[k]);
         maxResp = max(maxResp, resp);
-        _RespsOut[srcCount * k + id.x] = resp;
+        _RespsOut[eltsPerCluster * k + id.x] = resp;
     }
 
     // Log-sum-exp "trick".
     float sum = 0;
     for (k = 0; k != _NumClusters; ++k)
     {
-        sum += exp(_RespsOut[srcCount * k + id.x] - maxResp);
+        sum += exp(_RespsOut[eltsPerCluster * k + id.x] - maxResp);
     }
         
     float tmp = maxResp + log(sum);
@@ -103,7 +102,7 @@ void UpdateRespsAndMeans(uint3 id : SV_DispatchThreadID)
     // Normalize responsibilities.
     for (k = 0; k != _NumClusters; ++k)
     {
-        uint dstIndex = srcCount * k + id.x;
+        uint dstIndex = eltsPerCluster * k + id.x;
         float resp = exp(_RespsOut[dstIndex] - tmp) * binSize;
 
         // Responsibilities will be reduced in _Weights.

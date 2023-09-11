@@ -158,6 +158,12 @@ namespace GaussianMixtureModel
                 yield break;
             }
 
+            if (!m_Source.isReadable)
+            {
+                Debug.LogError($"Texture {m_Source.name} is not readable. Select the \"Read/Write\" checkbox in its inspector.");
+                yield break;
+            }
+
             SetContinuousEditorUpdate(true);
             m_NumSelectedColorBins = 0;
 
@@ -171,8 +177,7 @@ namespace GaussianMixtureModel
 
             var totalSamples = m_Source.width * m_Source.height;
 
-            // TODO Infer useGamma from source?
-            m_ExpectationMaximization.InitializationStep(m_ComputeCommandBuffer, initialMeans, m_Source, true);
+            m_ExpectationMaximization.InitializationStep(m_ComputeCommandBuffer, initialMeans, m_Source);
 
             ExecuteCommandBuffer(m_ComputeCommandBuffer, capture);
             ++m_BuffersGeneration;

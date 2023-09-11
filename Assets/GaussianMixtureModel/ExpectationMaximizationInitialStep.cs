@@ -8,24 +8,10 @@ namespace GaussianMixtureModel
 {
     partial class ExpectationMaximization
     {
-        public void InitializationStep(CommandBuffer cmd, NativeArray<float3> initialMeans, Texture source,
-            bool useGamma)
+        public void InitializationStep(CommandBuffer cmd, NativeArray<float3> initialMeans, Texture source)
         {
             Assert.IsTrue(initialMeans.Length > 0);
             Assert.IsNotNull(source);
-
-            // Handle whether or not the source requires gamma transformation.
-            if (m_InitShader.IsKeywordEnabled(m_UseGammaKeyword) != useGamma)
-            {
-                if (useGamma)
-                {
-                    m_InitShader.EnableKeyword(m_UseGammaKeyword);
-                }
-                else
-                {
-                    m_InitShader.DisableKeyword(m_UseGammaKeyword);
-                }
-            }
 
             // Reset previous value, we monitor it for visualization.
             m_NumSelectedColorBins[0] = 0;
@@ -114,7 +100,6 @@ namespace GaussianMixtureModel
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._CovariancesOut, m_CovarianceBuffer.In);
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._FracsOut, m_FracsBuffer);
 
-            // We only want to process m_NumClusters items.
             var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
             cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
         }

@@ -170,7 +170,7 @@ MonoBehaviour:
   m_InitShader: {fileID: 7200000, guid: 86a81a9999f241349b5ead2449ea8140, type: 3}
   m_ConvergeShader: {fileID: 7200000, guid: 42a5d7a901a946bfbfed0da35ba7fc98, type: 3}
   m_CholeskyShader: {fileID: 7200000, guid: 69ed72814d1d49c491c6c1f681259afb, type: 3}
-  m_Source: {fileID: 2800000, guid: 996b64927d3e68143959a989eb00ef38, type: 3}
-  m_NumClusters: 13
-  m_Iterations: 26
-  m_Delay: 0.19
+  m_Source: {fileID: 2800000, guid: 67c18156d8f70d5428f785a56149c4dc, type: 3}
+  m_NumClusters: 6
+  m_Iterations: 15
+  m_Delay: 0.145

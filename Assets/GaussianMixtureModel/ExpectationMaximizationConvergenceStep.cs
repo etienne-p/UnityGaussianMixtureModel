@@ -101,7 +101,6 @@ namespace GaussianMixtureModel
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._WeightsIn, m_WeightsBuffer.In);
             cmd.SetComputeBufferParam(shader, kernel, ShaderIds._MeansOut, m_CentroidBuffer.In);
 
-            // We only want to process m_NumClusters items.
             var numGroups = Mathf.CeilToInt(m_NumClusters / (float)k_GroupSize);
             cmd.DispatchCompute(shader, kernel, numGroups, 1, 1);
         }

@@ -4,7 +4,6 @@
 #define GROUP_SIZE 32
 
 #pragma enable_d3d11_debug_symbols
-#pragma multi_compile_local _ USE_GAMMA_SPACE
 
 #pragma kernel ResetColorBins
 #pragma kernel UpdateColorBins
@@ -40,9 +39,6 @@ void UpdateColorBins(uint3 id : SV_DispatchThreadID)
     }
 
     float3 sample = _SourceTexture[id.xy].rgb;
-#if USE_GAMMA_SPACE
-    sample = LinearToGammaSpace(sample);
-#endif
     // Calculate the index of the voxel the sample belongs to.
     uint3 index3d = min(sample, (0.9999).xxx) * GRID_SIZE;
     uint index = To1DIndex(index3d, GRID_SIZE);

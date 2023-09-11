@@ -46,7 +46,6 @@ namespace GaussianMixtureModel
         NativeArray<uint> m_NumSelectedColorBins;
         ComputeShader m_InitShader;
         ComputeShader m_ConvergeShader;
-        LocalKeyword m_UseGammaKeyword;
         readonly InitKernelIds m_InitKernelIds = new();
         readonly ConvergeKernelIds m_ConvergeKernelIds = new();
         int m_NumClusters;
@@ -71,7 +70,6 @@ namespace GaussianMixtureModel
         {
             m_InitShader = initShader;
             m_ConvergeShader = convergeShader;
-            m_UseGammaKeyword = new LocalKeyword(m_InitShader, "USE_GAMMA_SPACE");
             
             Utilities.LoadKernelIndices(m_InitShader, m_InitKernelIds);
             Utilities.LoadKernelIndices(m_ConvergeShader, m_ConvergeKernelIds);

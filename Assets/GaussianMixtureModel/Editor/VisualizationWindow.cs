@@ -98,9 +98,12 @@ namespace GaussianMixtureModel.Editor
         {
             GetWindow<VisualizationWindow>().Show();
         }
-        
-        [SerializeField] OrbitTransform m_OrbitTransform;
 
+        [SerializeField] 
+        OrbitTransform m_OrbitTransform;
+
+        VisualElement m_HelpBox;
+        VisualElement m_Container;
         Image m_Image;
         RenderTexture m_Target;
         CommandBuffer m_CommandBuffer;
@@ -115,14 +118,23 @@ namespace GaussianMixtureModel.Editor
 
         public void CreateGUI()
         {
-            var executeButton = new Button(TryStartExecution) {text = "Execute Expectation Maximization"};
-            rootVisualElement.Add(executeButton);
+            m_HelpBox = new HelpBox($"Select a game object holding a {nameof(GaussianMixtureComponent)} component in the hierarchy.", HelpBoxMessageType.Error);
+            rootVisualElement.Add(m_HelpBox);
+
+            m_Container = new VisualElement();
+            m_Container.style.flexGrow = 1;
+            rootVisualElement.Add(m_Container);
+
+            var executeButton = new Button(TryStartExecution) { text = "Execute Expectation Maximization" };
+            m_Container.Add(executeButton);
 
             m_Image = new Image();
             m_Image.style.flexGrow = 1;
             m_Image.RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
             m_Image.AddManipulator(new ViewManipulator(this));
-            rootVisualElement.Add(m_Image);
+            m_Container.Add(m_Image);
+
+            SelectionChanged();
         }
 
         void OnEnable()
@@ -169,6 +181,18 @@ namespace GaussianMixtureModel.Editor
             }
         }
 
+        void ShowHelpBox(bool value)
+        {
+            // CreateGUI may not have been called yet.
+            if (m_HelpBox == null || m_Container == null)
+            {
+                return;
+            }
+            
+            m_HelpBox.style.display = value ? DisplayStyle.Flex : DisplayStyle.None;
+            m_Container.style.display = value ? DisplayStyle.None : DisplayStyle.Flex;
+        }
+        
         void TryStartExecution()
         {
             if (m_GaussianMixture != null)
@@ -176,18 +200,19 @@ namespace GaussianMixtureModel.Editor
                 m_GaussianMixture.StartExecution();
             }
         }
-        
+
         void OnGeometryChanged(GeometryChangedEvent evt)
         {
             if (evt.newRect.width * evt.newRect.height == 0)
             {
                 return;
             }
-            
-            Utilities.AllocateIfNeededForCompute(ref m_Target, (int)evt.newRect.width, (int)evt.newRect.height, GraphicsFormat.R8G8B8A8_UNorm);
+
+            Utilities.AllocateIfNeededForCompute(ref m_Target, (int)evt.newRect.width, (int)evt.newRect.height,
+                GraphicsFormat.R8G8B8A8_UNorm);
             m_Image.image = m_Target;
         }
-        
+
         void SelectionChanged()
         {
             m_RenderHashcode = 0;
@@ -196,10 +221,12 @@ namespace GaussianMixtureModel.Editor
             if (go != null && go.TryGetComponent(typeof(GaussianMixtureComponent), out var gmm))
             {
                 m_GaussianMixture = (GaussianMixtureComponent)gmm;
+                ShowHelpBox(false);
             }
             else
             {
                 m_GaussianMixture = null;
+                ShowHelpBox(true);
             }
         }
     }
